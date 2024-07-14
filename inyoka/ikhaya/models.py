@@ -7,7 +7,7 @@
     :copyright: (c) 2007-2024 by the Inyoka Team, see AUTHORS for more details.
     :license: BSD, see LICENSE for more details.
 """
-from datetime import datetime
+from datetime import datetime, UTC
 from operator import attrgetter, itemgetter
 from typing import Optional
 from urllib.parse import urlencode
@@ -144,9 +144,13 @@ class CommentManager(models.Manager):
 class EventManager(models.Manager):
 
     def get_upcoming(self, count=10):
-        return self.get_queryset().order_by('date').filter(Q(visible=True) & (
+        a = self.get_queryset().order_by('date').filter(Q(visible=True) & (
             (Q(enddate__gte=Now()) & Q(date__lte=Now())) |
-            (Q(date__gte=Now()))))[:count]
+            (Q(date__gte=Now()))))
+
+        print(a.query)
+
+        return a[:count]
 
 
 class Category(models.Model):
@@ -224,7 +228,7 @@ class Article(models.Model, LockableObject):
 
     @deferred
     def pub_datetime(self):
-        return datetime.combine(self.pub_date, self.pub_time)
+        return datetime.combine(self.pub_date, self.pub_time, UTC)
 
     @property
     def local_pub_datetime(self):
@@ -295,7 +299,7 @@ class Article(models.Model, LockableObject):
             raise ValueError('text and intro must not be null')
 
         # We need a local pubdt variable due to caching of self.pub_datetime
-        pubdt = datetime.combine(self.pub_date, self.pub_time)
+        pubdt = datetime.combine(self.pub_date, self.pub_time, UTC)
         if not self.updated or self.updated < pubdt:
             self.updated = pubdt
             if kwargs.get("update_fields") is not None:
