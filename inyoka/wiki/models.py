@@ -92,7 +92,6 @@ from django.db import models
 from django.db.models import Count
 from django.db.models.functions import Upper
 from django.utils import timezone as dj_timezone
-
 from django.utils.functional import cached_property
 from django.utils.html import escape
 from django.utils.translation import get_language, gettext_lazy, to_locale
