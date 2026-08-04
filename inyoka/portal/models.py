@@ -30,6 +30,7 @@ from inyoka.wiki.acl import has_privilege as have_wiki_privilege
 
 from ..utils.clamav import validate_file_infection
 from .user import User
+from ..utils.forms import validate_file_extension
 
 
 class SubscriptionManager(ContentTypeManager):
@@ -301,7 +302,7 @@ class StaticFile(models.Model):
     identifier = models.CharField(gettext_lazy('Identifier'),
         max_length=100, unique=True, db_index=True)
     file = models.FileField(gettext_lazy('File'), upload_to='portal/files',
-                            validators=[validate_file_infection])
+                            validators=[validate_file_infection, validate_file_extension])
     is_ikhaya_icon = models.BooleanField(
         gettext_lazy('Is Ikhaya icon'),
         default=False,
@@ -485,7 +486,7 @@ class Linkmap(models.Model):
                              validators=[token_validator])
     url = models.URLField(gettext_lazy('Link'))
     icon = models.ImageField(gettext_lazy('Icon'), upload_to='linkmap/icons', blank=True,
-                             validators=[validate_file_infection])
+                             validators=[validate_file_infection, validate_file_extension])
 
     objects = LinkmapManager()
 

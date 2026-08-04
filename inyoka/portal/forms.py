@@ -62,7 +62,7 @@ from inyoka.utils.forms import (
     NativeSplitDateTimeWidget,
     TopicField,
     validate_gpgkey,
-    validate_signature,
+    validate_signature, validate_file_extension,
 )
 from inyoka.utils.sessions import SurgeProtectionMixin
 from inyoka.utils.text import slugify
@@ -1129,7 +1129,7 @@ class ConfigurationForm(forms.Form):
                       'register an account.'))
     team_icon = forms.ImageField(label=gettext_lazy('Global team icon'), required=False,
         help_text=gettext_lazy('Please note the details on the maximum size below.'),
-        validators=[validate_file_infection])
+        validators=[validate_file_infection, validate_file_extension])
     wiki_newpage_template = forms.CharField(required=False,
         widget=forms.Textarea(attrs={'rows': 5}),
         label=gettext_lazy('Default text of new wiki pages'))

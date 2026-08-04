@@ -10,16 +10,19 @@
 """
 import hashlib
 import logging
+import os.path
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import IO, AnyStr
 
+from PIL import Image, UnidentifiedImageError
 from django import forms
 from django.conf import settings
 from django.core import validators
 from django.core.cache import cache
-from django.core.exceptions import BadRequest
+from django.core.exceptions import BadRequest, ValidationError
 from django.forms import (
     DateInput,
     MultipleChoiceField,
@@ -28,6 +31,7 @@ from django.forms import (
 )
 from django.forms.widgets import TextInput
 from django.utils.translation import gettext as _
+from inyoka.utils.logger import logger
 
 from inyoka.markup.base import StackExhaused, parse
 from inyoka.utils.captcha import Captcha
@@ -451,3 +455,59 @@ class TopicField(forms.CharField):
             raise forms.ValidationError(_('This topic does not exist.'))
 
         return topic
+
+
+def validate_file_extension(file: IO[AnyStr]) -> None:
+    """
+    Validator function that can be used in a django form field.
+
+    Simple example usage:
+    - inside a form
+      ``upload_file = forms.FileField(validators=[validate_file_extension])``
+    - inside a model
+      ``document = models.FileField(validators=[validate_file_extension])``
+    """
+    ext = os.path.splitext(file.name)[1]
+    ext = ext.lower()
+
+    # TODO log the filename/hash, detected format, and dimensions of every image processed;
+    logger.info(file.name)
+
+    if not ext:
+        raise ValidationError(_('File has no file extension.'))
+
+    file.seek(0)
+
+    try:
+        img = Image.open(file, formats=('AVIF','GIF','JPEG','PNG','WEBP'))
+    except UnidentifiedImageError:
+        file.seek(0)
+        if file.content_type == 'text/plain' and ext == '.txt':
+            return
+        elif file.content_type == 'application/pdf' and ext == '.pdf' and file.read(5) == b"%PDF-":
+            return
+
+        file.name = file.name + '.obj'
+        return
+
+    try:
+        img.verify()
+    except (OSError, SyntaxError) as e: # see f.e. pillow's PngImagePlugin
+        logger.error(e)
+        img.close()
+        raise ValidationError(_('Corrupted image.'))
+
+    mimetype_file = img.get_format_mimetype()
+    logger.info(f'mimetype: {mimetype_file}')
+
+    if mimetype_file != file.content_type:
+        img.close()
+        raise ValidationError(_('Transmitted mimetype does not fit the files mimetype.'))
+
+    pillow_format_from_ext = Image.registered_extensions()[ext]
+    if pillow_format_from_ext != img.format:
+        img.close()
+        raise ValidationError(_('File extension does not fit to the files mime type.'))
+
+    file.seek(0)
+    img.close()
