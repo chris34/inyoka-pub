@@ -15,7 +15,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import IO, AnyStr
+from typing import IO, AnyStr, BinaryIO
 
 from PIL import Image, UnidentifiedImageError
 from django import forms
@@ -31,6 +31,8 @@ from django.forms import (
 )
 from django.forms.widgets import TextInput
 from django.utils.translation import gettext as _
+
+from inyoka.utils.files import sha256_io
 from inyoka.utils.logger import logger
 
 from inyoka.markup.base import StackExhaused, parse
@@ -457,10 +459,22 @@ class TopicField(forms.CharField):
         return topic
 
 
-def validate_file_extension(file: IO[AnyStr]) -> None:
+def validate_file_extension(file: BinaryIO) -> None:
     """
-    Validator function that can be used in a django form field.
+    Validator function which checks on an uploaded file if the file extension
+      - fits to the mime from file itself and
+      - fits to the mime send in the HTTP request
 
+    It only checks the extension for
+       - PDF,
+       - a subset of images supported by pillow which are commonly used, and
+       - text file
+
+    All other file extensions must be considered as unknown by the webserver.
+    Good mitigations are f.e. to add no sniff in the header and
+    to force downloads of the file.
+
+    This method can be used in a django form field.
     Simple example usage:
     - inside a form
       ``upload_file = forms.FileField(validators=[validate_file_extension])``
@@ -470,44 +484,54 @@ def validate_file_extension(file: IO[AnyStr]) -> None:
     ext = os.path.splitext(file.name)[1]
     ext = ext.lower()
 
-    # TODO log the filename/hash, detected format, and dimensions of every image processed;
-    logger.info(file.name)
+    logger.info(file.name, 'sha256:', sha256_io(file), 'ext', ext)
 
     if not ext:
         raise ValidationError(_('File has no file extension.'))
 
     file.seek(0)
 
-    try:
-        img = Image.open(file, formats=('AVIF','GIF','JPEG','PNG','WEBP'))
-    except UnidentifiedImageError:
+    if ext == '.pdf':
+        mimetype = 'application/pdf'
+        ext_fits_file_mime = file.read(5) == b"%PDF-"
         file.seek(0)
-        if file.content_type == 'text/plain' and ext == '.txt':
-            return
-        elif file.content_type == 'application/pdf' and ext == '.pdf' and file.read(5) == b"%PDF-":
-            return
 
-        file.name = file.name + '.obj'
+    elif ext in Image.registered_extensions():
+        try:
+            img = Image.open(file, formats=('AVIF','GIF','JPEG','PNG','WEBP'))
+        except UnidentifiedImageError:
+            raise ValidationError(_('Invalid image.'))
+
+        try:
+            img.verify()
+        except (OSError, SyntaxError) as e: # see f.e. pillow's PngImagePlugin
+            logger.error(e)
+            img.close()
+            raise ValidationError(_('Corrupted image.'))
+
+
+        logger.info('dimensions in px (width, height)', img.size)
+
+        mimetype = img.get_format_mimetype()
+
+        pillow_format_from_ext = Image.registered_extensions()[ext]
+        ext_fits_file_mime = pillow_format_from_ext == img.format
+
+        # explicitly don't close img here, as file can be used again by django
+
+    elif ext == '.txt':
+        mimetype = 'text/plain'
+        ext_fits_file_mime = True # just check if HTTP mime fits to txt
+
+    else:
+        # stop checking for details on all other files
         return
 
-    try:
-        img.verify()
-    except (OSError, SyntaxError) as e: # see f.e. pillow's PngImagePlugin
-        logger.error(e)
-        img.close()
-        raise ValidationError(_('Corrupted image.'))
 
-    mimetype_file = img.get_format_mimetype()
-    logger.info(f'mimetype: {mimetype_file}')
+    logger.info(f'mimetype: {mimetype}')
 
-    if mimetype_file != file.content_type:
-        img.close()
-        raise ValidationError(_('Transmitted mimetype does not fit the files mimetype.'))
-
-    pillow_format_from_ext = Image.registered_extensions()[ext]
-    if pillow_format_from_ext != img.format:
-        img.close()
+    if not ext_fits_file_mime:
         raise ValidationError(_('File extension does not fit to the files mime type.'))
 
-    file.seek(0)
-    img.close()
+    if mimetype != file.content_type:
+        raise ValidationError(_('Transmitted mimetype does not fit the files mimetype.'))

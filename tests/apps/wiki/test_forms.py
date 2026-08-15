@@ -114,7 +114,7 @@ class TestAddAttachmentForm(TestCase):
         upload_object = SimpleUploadedFile('eicar.png', b'foobar', content_type='image/png')
         form = self.form(files={'attachment': upload_object})
 
-        self.assertEqual(form.errors, {'attachment': ['Not an image.']})
+        self.assertEqual(form.errors, {'attachment': ['Invalid image.']})
 
     def test_wrong_file_extension(self):
         path_file = path.join(path.dirname(__file__), 'happy.png')
@@ -175,6 +175,12 @@ class TestAddAttachmentForm(TestCase):
             upload_object = SimpleUploadedFile('partial.png', f.read(), content_type='image/png')
         form = self.form(files={'attachment': upload_object})
         self.assertEqual(form.errors, {'attachment': ['Corrupted image.']})
+
+    def test_bat(self):
+        upload_object = SimpleUploadedFile('eicar.gz', b'foobar', content_type='application/gzip')
+        form = self.form(files={'attachment': upload_object})
+
+        self.assertTrue(form.is_valid())
 
 
 class TestEditAttachmentForm(TestCase):
