@@ -71,6 +71,7 @@
     :license: BSD, see LICENSE for more details.
 """
 import locale
+import mimetypes
 import random
 import time
 from collections import defaultdict
@@ -1199,7 +1200,7 @@ class Attachment(models.Model):
     @cached_property
     def mimetype(self):
         """The mimetype of the attachment."""
-        return 'application/octet-stream'  # TODO
+        return mimetypes.guess_type(self.filename)[0] or 'application/octet-stream'
 
     @property
     def contents(self):
