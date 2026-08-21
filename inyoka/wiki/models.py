@@ -1220,7 +1220,7 @@ class Attachment(models.Model):
         """
         This method returns a `HTML` representation of the attachment for the
         `show_action` page.  If this method does not know about an internal
-        representation for the object the return value will be an download
+        representation for the object the return value will be a download
         link to the raw attachment.
         """
         url = escape(self.get_absolute_url())
