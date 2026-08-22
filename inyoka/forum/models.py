@@ -36,7 +36,6 @@ from werkzeug.utils import secure_filename
 from inyoka.forum.constants import (
     CACHE_PAGES_COUNT,
     POSTS_PER_PAGE,
-    SUPPORTED_IMAGE_TYPES,
     UBUNTU_DISTROS,
 )
 from inyoka.forum.notifications import notify_reported_topic_subscribers
@@ -1058,23 +1057,8 @@ class Post(models.Model, LockableObject):
         old_topic.forum.invalidate_topic_cache()
 
     @property
-    def grouped_attachments(self):
-        # TODO
-        def expr(v):
-            if not v.mimetype.startswith('image') or v.mimetype not in SUPPORTED_IMAGE_TYPES:
-                return ''
-            return _('Pictures')
-
-        if hasattr(self, '_attachments_cache'):
-            attachments = sorted(self._attachments_cache, key=expr)
-        else:
-            attachments = sorted(self.attachments.all(), key=expr)
-
-        grouped = [
-            (x[0], list(x[1]), 'broken' if not x[0] else '')
-            for x in groupby(attachments, expr)
-        ]
-        return grouped
+    def ordered_attachments(self):
+        return self.attachments.order_by('name').all()
 
     def check_ownpost_limit(self, type='edit'):
         if type == 'edit':
@@ -1227,9 +1211,6 @@ class Attachment(models.Model):
         Delete the attachment from the filesystem and
         also mark the database-object for deleting.
         """
-        thumb_path = self.get_thumbnail_path()
-        if thumb_path and path.exists(thumb_path):
-            os.remove(thumb_path)
         self.file.delete(save=False)
         super().delete()
 
@@ -1261,104 +1242,20 @@ class Attachment(models.Model):
             attachment.file.close()
 
     @property
-    def size(self):
+    def size(self) -> int:
         """The size of the attachment in bytes."""
         f = self.file
-        return f.size if f.storage.exists(f.name) else 0.0
+        return f.size if f.storage.exists(f.name) else 0
 
-    @property
-    def contents(self):
-        """
-        The raw contents of the file.  This is usually unsafe because
-        it can cause the memory limit to be reached if the file is too
-        big.
+        ## TODO remove CSS
+        ## TODO remove all forum thumbnails
 
-        This method only opens files that are less than 1KB great, if the
-        file is greater we return None.
-        """
-        f = self.file
-        size = self.size
-        if (size / 1024) > 1 or size == 0.0:
-            return
+        ## show_preview and show_thumbnails are fals by default (so, for the most users including anonymous ones)
+        ## we only have the drawback of security bugs in pillow or DoS in pygments
+        ## the application won't be able to determine every file type
 
-        with f.file as fobj:
-            return fobj.read()
-
-    def get_thumbnail_path(self):
-        """
-        Returns the path to the thumbnail file.
-        """
-        thumbnail_path = self.file.name
-        img_path = path.join(settings.MEDIA_ROOT,
-                             'forum/thumbnails/%s-%s' % (self.id, thumbnail_path.split('/')[-1]))
-        return get_thumbnail(self.file.path, img_path, *settings.FORUM_THUMBNAIL_SIZE)
-
-    @property
-    def html_representation(self):
-        """
-        This method returns a `HTML` representation of the attachment for the
-        `show_action` page.  If this method does not know about an internal
-        representation for the object the return value will be an download
-        link to the raw attachment.
-        """
-        url = escape(self.get_absolute_url())
-        show_thumbnails = current_request.user.settings.get(
-            'show_thumbnails', False)
-        show_preview = current_request.user.settings.get(
-            'show_preview', False)
-
-        def isimage():
-            """
-            This helper returns True if this attachment is a supported image,
-            else False.
-            """
-            return True if self.mimetype in SUPPORTED_IMAGE_TYPES else False
-
-        def istext():
-            """
-            This helper returns True if this attachment is a text file.
-            """
-            return self.mimetype.startswith('text/')
-
-        def thumbnail():
-            """
-            This helper returns the thumbnail url of this attachment or None
-            if there is no way to create a thumbnail.
-            """
-            thumb = self.get_thumbnail_path()
-            if thumb:
-                return href('media', 'forum/thumbnails/%s' % thumb.split('/')[-1])
-            return thumb
-
-        if show_preview and show_thumbnails and isimage():
-            thumb = thumbnail()
-            if thumb:
-                return format_html(
-                    '<a href="{}"><img class="preview" src="{}" alt="{}" title="{}"></a>',
-                    url, thumb, self.comment, self.comment,
-                )
-            else:
-                linktext = pgettext(
-                    'Link text to an image attachment',
-                    'View %(name)s'
-                ) % {'name': self.name}
-                return format_html(
-                    '<a href="{}" type="{}" title="{}">{}</a>',
-                    url, self.mimetype, self.comment, linktext
-                )
-        elif show_preview and istext():
-            contents = self.contents
-            if contents is not None:
-                try:
-                    highlighted = highlight_code(force_str(contents), mimetype=self.mimetype)
-                    return format_html('<div class="code">{}</div>', highlighted)
-                except DjangoUnicodeDecodeError:
-                    pass
-
-        linktext = pgettext('Link text to download an attachment',
-            'Download %(name)s') % {'name': self.name}
-        return format_html('<a href="{}" type="{}" title="{}">{}</a>',
-                           url, self.mimetype, self.comment, linktext)
+        ## user settings are kept, in case this change should be reverted
+        ## inyoka.forum.macros was never reached, as the Picture marco is not allowed in the forum
 
     def get_absolute_url(self, action=None):
         return self.file.url
