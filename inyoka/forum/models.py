@@ -1250,7 +1250,7 @@ class Attachment(models.Model):
         ## TODO remove CSS
         ## TODO remove all forum thumbnails
 
-        ## show_preview and show_thumbnails are fals by default (so, for the most users including anonymous ones)
+        ## show_preview and show_thumbnails are false by default (so, for the most users including anonymous ones)
         ## we only have the drawback of security bugs in pillow or DoS in pygments
         ## the application won't be able to determine every file type
 
